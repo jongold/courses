@@ -1,6 +1,6 @@
 from __future__ import division,print_function
 import math, os, json, sys, re
-import cPickle as pickle
+import _pickle as pickle
 from glob import glob
 import numpy as np
 from matplotlib import pyplot as plt
@@ -37,12 +37,12 @@ from keras.utils import np_utils
 from keras.utils.np_utils import to_categorical
 from keras.models import Sequential, Model
 from keras.layers import Input, Embedding, Reshape, merge, LSTM, Bidirectional
-from keras.layers import TimeDistributed, Activation, SimpleRNN, GRU
+from keras.layers import TimeDistributed, Activation, SimpleRNN, GRU, deserialize
 from keras.layers.core import Flatten, Dense, Dropout, Lambda
-from keras.regularizers import l2, activity_l2, l1, activity_l1
+from keras.regularizers import l2, l1
+
 from keras.layers.normalization import BatchNormalization
 from keras.optimizers import SGD, RMSprop, Adam
-from keras.utils.layer_utils import layer_from_config
 from keras.metrics import categorical_crossentropy, categorical_accuracy
 from keras.layers.convolutional import *
 from keras.preprocessing import image, sequence
@@ -54,10 +54,19 @@ np.set_printoptions(precision=4, linewidth=100)
 
 
 to_bw = np.array([0.299, 0.587, 0.114])
+
 def gray(img):
-    return np.rollaxis(img,0,3).dot(to_bw)
+    if K.image_dim_ordering() == 'tf':
+        return np.rollaxis(img, 0, 1).dot(to_bw)
+    else:
+        return np.rollaxis(img, 0, 3).dot(to_bw)
+
 def to_plot(img):
-    return np.rollaxis(img, 0, 3).astype(np.uint8)
+    if K.image_dim_ordering() == 'tf':
+        return np.rollaxis(img, 0, 1).astype(np.uint8)
+    else:
+        return np.rollaxis(img, 0, 3).astype(np.uint8)
+
 def plot(img):
     plt.imshow(to_plot(img))
 
@@ -98,11 +107,11 @@ def onehot(x):
 def wrap_config(layer):
     return {'class_name': layer.__class__.__name__, 'config': layer.get_config()}
 
+def copy_layer(layer):
+    return deserialize(wrap_config(layer))
 
-def copy_layer(layer): return layer_from_config(wrap_config(layer))
-
-
-def copy_layers(layers): return [copy_layer(layer) for layer in layers]
+def copy_layers(layers):
+    return [copy_layer(layer) for layer in layers]
 
 
 def copy_weights(from_layers, to_layers):
@@ -120,7 +129,7 @@ def insert_layer(model, new_layer, index):
     res = Sequential()
     for i,layer in enumerate(model.layers):
         if i==index: res.add(new_layer)
-        copied = layer_from_config(wrap_config(layer))
+        copied = deserialize(wrap_config(layer))
         res.add(copied)
         copied.set_weights(layer.get_weights())
     return res
@@ -242,8 +251,8 @@ class MixIterator(object):
     def next(self, *args, **kwargs):
         if self.multi:
             nexts = [[next(it) for it in o] for o in self.iters]
-            n0s = np.concatenate([n[0] for n in o])
-            n1s = np.concatenate([n[1] for n in o])
+            n0 = np.concatenate([n[0] for n in nexts])
+            n1 = np.concatenate([n[1] for n in nexts])
             return (n0, n1)
         else:
             nexts = [next(it) for it in self.iters]
